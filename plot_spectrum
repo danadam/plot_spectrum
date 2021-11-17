@@ -1,0 +1,408 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+log_err()
+{
+    echo "$(basename "$0"): ${1:-unknown error}" >&2
+}
+die()
+{
+    log_err "${1-}"
+    exit 1
+}
+die_usage()
+{
+    log_err "${1-die() argument missing}"
+    echo "" >&2
+    usage
+    exit 1
+}
+sanitize()
+{
+    echo "${1}" | sed -e 's/[\/~!$^&*(){}=\| :;,<>?"`'"'"']/\\&/g'
+}
+# gnuplot characters for command substitution: `
+# gnuplot characters for enhanced text: ~@^&_{}
+escape_sed_and_gnuplot()
+{
+    # test with
+    # --title '/\"\\, \`echo hi\` → `echo hi`'
+    # --title '/\"\\\\, \`echo hi\` → `echo hi`, x\\^2 → x^2, x\\_0 → x_0, x\\@\\^2\\_0 → x@^2_0, X\\&\\{aaa\\}X → X&{aaa}X, \\~a/ → ~a/'
+
+	# 1. To preserve backslashes in the input.
+    #    This sed will see 's_\_\\_g', so it will double each backslash. The
+    #    result is used in another sed, which will "eat" them.
+    # 2. To preserve slash and ampersand in the input.
+    #    And also to not trip-up the other sed
+    echo "${1}" | sed \
+        -e 's_\\_\\\\_g' \
+        -e 's_[/&]_\\&_g'
+}
+usage()
+{
+    cat << EOF
+Usage: $(basename "$0") -i DATA_FILE [optional options] COL_N TITLE_N [COL_N TITLE_N [...]]
+Required:
+  -i | --input DATA_FILE    - input file
+  COL_N                     - column of data from the file (starts from 2,
+                              the 1st column is the frequency)
+  TITLE_N                   - title fot the column data
+
+Optional:
+  -o | --output OUTPUT_FILE - output file (default is same as input with the
+                              extension changed to "png")
+  -f | --force              - force overwrite output file
+  --gp-commands             - don't invoke gnuplot, just print gnuplot
+                              commands to stdout
+
+  -xl | --xlabel LABEL      - x axis label (default is Hz)
+  -yl | --ylabel LABEL      - y axis label (default is dBFS)
+  --title TITLE             - graph title
+  --xrange RANGE            - x axis range in [low:high] format
+                              (default is [20:30000])
+  --yrange RANGE            - y axis range in [low:high] format
+                              (default is [-120:0])
+  -l | --linear             - use linear freq. scale (default is log scale)
+  -c | --compact            - compact mode, i.e. labels inside the graph
+  --with-points             - use "linespoints" format instead of "lines"
+  --size SIZE               - size of the graph (default is medium)
+
+  --to-db                   - plot 20 * log10( data/db_ref )
+  --db-ref REFERENCE        - reference value for dB calculations (default is 1)
+  -h | --help               - this help message
+
+SIZE can be either a keyword or an actual size in format WIDTHxHEIGHT. Possible
+keywords and corresponding sizes:
+  small:        800x400
+  medium:       1200x600
+  large | big:  1600x800
+EOF
+}
+
+declare -ra required_cmds=(cut sed tr)
+for cmd in "${required_cmds[@]}"; do
+    if ! which "${cmd}" >/dev/null 2>&1; then
+        log "Required tools: ${required_cmds[*]}"
+        die "Required tool not found: ${cmd}"
+    fi
+done
+
+IS_VERBOSE=0
+INPUT=""
+XLABEL="Hz"
+YLABEL="dBFS"
+OUTPUT=""
+IS_FORCE=0
+GP_COMMANDS=0
+TITLE=""
+XRANGE=""
+YRANGE=""
+IS_LOG_FREQ_SCALE=1
+IS_COMPACT=0
+IS_POINTS=0
+IS_CONVERT_TO_DB=0
+DB_REF=1
+SIZE=""
+
+while [ -n "${1-}" ]; do
+    case "${1}" in
+        -i|--input| \
+        -o|--output| \
+        --title| \
+        -xl|--xlabel| \
+        -yl|--ylabel| \
+        --xrange| \
+        --yrange| \
+        --size| \
+        --db-ref)
+            if [ ! $# -ge 2 ]; then
+                die_usage "Argument missing for option ${1}"
+            fi
+        ;;
+    esac
+    case "${1}" in
+        -i|--input)
+            INPUT="${2-}"
+            shift
+        ;;
+        -xl|--xlabel)
+            XLABEL="${2-}"
+            shift
+        ;;
+        -yl|--ylabel)
+            YLABEL="${2-}"
+            shift
+        ;;
+        -o|--output)
+            OUTPUT="${2-}"
+            shift
+        ;;
+        -f|--force)
+            IS_FORCE=1
+        ;;
+        --gp-commands)
+            GP_COMMANDS=1
+        ;;
+        --title)
+            TITLE="${2-}"
+            shift
+        ;;
+        --xrange)
+            XRANGE="${2-}"
+            shift
+        ;;
+        --yrange)
+            YRANGE="${2-}"
+            shift
+        ;;
+        -l|--linear)
+            IS_LOG_FREQ_SCALE=0
+        ;;
+        -c|--compact)
+            IS_COMPACT=1
+        ;;
+        --with-points)
+            IS_POINTS=1
+        ;;
+        --to-db)
+            IS_CONVERT_TO_DB=1
+        ;;
+        --db-ref)
+            DB_REF="${2-}"
+            shift
+        ;;
+        --size)
+            SIZE="${2-}"
+            shift
+        ;;
+        -h|--help)
+            usage
+            exit 0
+        ;;
+        --verbose)
+            IS_VERBOSE="1"
+        ;;
+        *)
+            break
+        ;;
+    esac
+    shift
+done
+
+if [ "${IS_VERBOSE}" = "1" ]; then
+    msg=$(cat <<EOF
+Options:
+INPUT=|$INPUT|
+XLABEL=|$XLABEL|
+YLABEL=|$YLABEL|
+OUTPUT=|$OUTPUT|
+IS_FORCE=|$IS_FORCE|
+GP_COMMANDS=|$GP_COMMANDS|
+TITLE=|$TITLE|
+XRANGE=|$XRANGE|
+YRANGE=|$YRANGE|
+IS_LOG_FREQ_SCALE=|$IS_LOG_FREQ_SCALE|
+IS_COMPACT=|$IS_COMPACT|
+IS_POINTS=|$IS_POINTS|
+IS_CONVERT_TO_DB=|$IS_CONVERT_TO_DB|
+DB_REF=|$DB_REF|
+SIZE=|$SIZE|
+EOF
+)
+    log_err "${msg}"
+fi
+
+if [ ! -f "${INPUT}" ]; then
+    die "File '${INPUT}' doesn't exist."
+fi
+
+if [ -z "${OUTPUT}" ]; then
+    OUTPUT="${INPUT%.*}.png"
+fi
+if [ -f "${OUTPUT}" ] && [ "${IS_FORCE}" = "0" ]; then
+    die "File '${OUTPUT}' already exists. Use -f to overwrite."
+fi
+
+if [ "${GP_COMMANDS}" = 0 ] && ! which "gnuplot" >/dev/null 2>&1; then
+    die "gnuplot command not found"
+fi
+
+if [ -z "${XLABEL}" ] || [ -z "${YLABEL}" ]; then
+    die_usage "Missing axis labels."
+fi
+
+if [ "${DB_REF}" = "0" ]; then
+    die "dB reference cannot be 0."
+fi
+
+if [ $# -eq 0 ]; then
+    die_usage "Missing columns/titles pairs."
+fi
+
+if [ -z "${SIZE}" ]; then
+    SIZE="medium"
+else
+    SIZE="$(echo "${SIZE}" | tr "[:upper:]" "[:lower:]")"
+fi
+
+declare -i width=0
+declare -i height=0
+case "${SIZE}" in
+    small)
+        width=800
+        height=400
+    ;;
+    medium)
+        width=1200
+        height=600
+    ;;
+    large|big)
+        width=1600
+        height=800
+    ;;
+esac
+if [ "${width}" -eq 0 ]; then
+    size_regex="^[0-9]+x[0-9]+$"
+    if [[ "${SIZE}" =~ ${size_regex} ]]; then
+        width="$(echo "${SIZE}" | cut -d'x' -f1)"
+        height="$(echo "${SIZE}" | cut -d'x' -f2)"
+    else
+        die_usage "Wrong size format: ${SIZE}"
+    fi
+fi
+
+DATA_COLUMNS=()
+TITLES=()
+while [ $# -gt 0 ]; do
+    if [ $# -lt 2 ]; then
+        die_usage "Missing part of a column/title pair."
+    fi
+    DATA_COLUMNS+=("${1}")
+    TITLES+=("${2}")
+    shift 2
+done
+declare -ri columns_size="${#DATA_COLUMNS[@]}"
+
+data_style="lines"
+line_type="lw 2"
+if [ "${IS_POINTS}" = 1 ]; then
+    data_style="linespoints"
+    line_type="lw 2 pt 3"
+fi
+
+TMP=$(mktemp -d "/tmp/$(basename "$0").XXXXXXX")
+trap 'rm -rf "${TMP}"' EXIT
+
+GPI="${TMP}/graph.gpi"
+cat >"${GPI}" <<EOF
+reset
+set terminal pngcairo truecolor size T_OUTPUT_SIZE
+set output T_OUTPUT_FILE
+
+# remove border on top and right and set color to gray
+set style line 11 lc rgb 'black' lt 1
+set border 3 back ls 11
+set tics nomirror
+
+# define grid
+set style line 12 lc rgb '#303030' lt 0 lw 1
+set grid back ls 12
+set grid mxtics ls 12
+
+# define lines
+set style data T_DATA_STYLE
+
+# not compact
+set title T_TITLE
+set xlabel T_XLABEL
+set ylabel T_YLABEL
+
+# compact
+set title T_TITLE offset 0,-2
+set tmargin 1
+set xlabel T_XLABEL offset 0,3.5
+set ylabel T_YLABEL offset 8.5,0
+set lmargin 5
+
+# 1 k, 10 k, etc
+set format x "%.0s %c"
+
+# freq scale linear
+set mxtics
+
+# freq scale log
+set logscale x
+
+set xrange T_XRANGE
+set yrange T_YRANGE
+
+# --------------------------------
+
+EOF
+
+effective_yrange=${YRANGE:-[-120:0]}
+sed -i "${GPI}" \
+    -e "s/T_OUTPUT_SIZE/${width}, ${height}/" \
+    -e "s/T_OUTPUT_FILE/\"$(escape_sed_and_gnuplot "${OUTPUT}")\"/" \
+    -e "s/T_DATA_STYLE/${data_style}/" \
+    -e "s/T_XLABEL/\"$(escape_sed_and_gnuplot "${XLABEL}")\"/" \
+    -e "s/T_YLABEL/\"$(escape_sed_and_gnuplot "${YLABEL}")\"/" \
+    -e "s/T_YRANGE/${effective_yrange}/"
+
+if [ -n "${TITLE}" ]; then
+    sed -i "${GPI}" -e "s/T_TITLE/\"$(escape_sed_and_gnuplot "${TITLE}")\"/"
+else
+    sed -i "${GPI}" -e "/T_TITLE/ d"
+fi
+
+if [ "${IS_COMPACT}" = 1 ]; then
+    sed -i "${GPI}" -e "/# not compact/,/^$/ d"
+else
+    sed -i "${GPI}" -e "/# compact/,/^$/ d"
+fi
+
+if [ "${IS_LOG_FREQ_SCALE}" = 1 ]; then
+    effective_xrange="${XRANGE:-[10:30000]}"
+    sed -i "${GPI}" \
+        -e "/# freq scale linear/,/^$/ d" \
+        -e "s/T_XRANGE/${effective_xrange}/"
+else
+    effective_xrange="${XRANGE:-[0:23000]}"
+    sed -i "${GPI}" \
+        -e "/# freq scale log/,/^$/ d" \
+        -e "s/T_XRANGE/${effective_xrange}/"
+
+    x_max="$(echo "${effective_xrange}" | tr ":]" " " | cut -d' ' -f 2)"
+    if [ "${x_max}" -lt "10000" ]; then
+        sed -i "${GPI}" -e "/# 1 k, 10 k/,/^$/ d"
+    fi
+fi
+
+# colorblind safe palettes: https://www.color-blindness.com/coblis-color-blindness-simulator/
+declare -ra palette_ibm=("#648fff" "#785ef0" "#dc267f" "#fe6100" "#ffb000")
+declare -ra palette_wong=("#000000" "#e69f00" "#56b4e9" "#009e73" "#f0e442" "#0072b2" "#d55e00" "#cc79a7")
+declare -ra palette_tol=("#332288" "#117733" "#44aa99" "#88ccee" "#ddcc77" "#cc6677" "#aa4499" "#882255")
+
+declare -ra colors=("${palette_ibm[@]}")
+
+
+echo -n "plot" >>"${GPI}"
+for ((i = 0; i < "${columns_size}"; i++)); do
+    if [ "${i}" -gt 0 ]; then
+        echo ", \\" >>"${GPI}"
+    fi
+
+    data="${DATA_COLUMNS[i]}"
+    if [ "${IS_CONVERT_TO_DB}" = 1 ]; then
+        data="(20 * log10( \$${data} / ${DB_REF} ))"
+    fi
+    echo -n " '${INPUT}' using 1:${data} title \"${TITLES[i]}\" linetype rgb '${colors[i]-grey20}' ${line_type}" >>"${GPI}"
+done
+echo "" >>"${GPI}"
+
+
+if [ "${GP_COMMANDS}" = 1 ]; then
+    cat "${GPI}"
+else
+    gnuplot "${GPI}"
+fi
