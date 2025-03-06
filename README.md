@@ -1,4 +1,4 @@
-<!-- vim: set fdm=marker tw=80: -->
+<!-- vim: set tw=80: -->
 
 # Intro
 
