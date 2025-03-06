@@ -1,4 +1,23 @@
 <!-- vim: set tw=80: -->
+**Table of Contents**
+
+<div id="user-content-toc">
+
+* [Intro](#intro)
+* [Command line options](#command-line-options)
+* [Examples](#examples)
+  * [Linear frequency scale](#linear-frequency-scale)
+  * [Axes range](#axes-range)
+  * [Compact mode](#compact-mode)
+  * [Conversion to dBFS](#conversion-to-dbfs)
+  * [Multiple signals](#multiple-signals)
+* [Just gnuplot commands](#just-gnuplot-commands)
+* [Special characters in the title and labels](#special-characters-in-the-title-and-labels)
+  * [Quotes](#quotes)
+  * [Command substitution](#command-substitution)
+  * [Enhanced text](#enhanced-text)
+
+</div>
 
 # Intro
 
