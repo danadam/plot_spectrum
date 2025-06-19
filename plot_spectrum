@@ -69,6 +69,8 @@ Optional:
 
   --to-db                   - plot 20 * log10( data/db_ref )
   --db-ref REFERENCE        - reference value for dB calculations (default is 1)
+  -r REL_DB_LEVEL           - show values relative to this level
+
   -h | --help               - this help message
 
 SIZE can be either a keyword or an actual size in format WIDTHxHEIGHT. Possible
@@ -103,6 +105,7 @@ IS_POINTS=0
 IS_CONVERT_TO_DB=0
 DB_REF=1
 SIZE=""
+REL_DB_LEVEL=0
 
 while [ -n "${1-}" ]; do
     case "${1}" in
@@ -114,7 +117,8 @@ while [ -n "${1-}" ]; do
         --xrange| \
         --yrange| \
         --size| \
-        --db-ref)
+        --db-ref| \
+        -r)
             if [ ! $# -ge 2 ]; then
                 die_usage "Argument missing for option ${1}"
             fi
@@ -171,6 +175,10 @@ while [ -n "${1-}" ]; do
             DB_REF="${2-}"
             shift
         ;;
+        -r)
+            REL_DB_LEVEL="${2-}"
+            shift
+        ;;
         --size)
             SIZE="${2-}"
             shift
@@ -206,6 +214,7 @@ IS_COMPACT=|$IS_COMPACT|
 IS_POINTS=|$IS_POINTS|
 IS_CONVERT_TO_DB=|$IS_CONVERT_TO_DB|
 DB_REF=|$DB_REF|
+REL_DB_LEVEL=|$REL_DB_LEVEL|
 SIZE=|$SIZE|
 EOF
 )
@@ -230,7 +239,9 @@ fi
 if [ -z "${XLABEL}" ] || [ -z "${YLABEL}" ]; then
     die_usage "Missing axis labels."
 fi
-
+if [ "${YLABEL}" = "dBFS" ] && [ "${REL_DB_LEVEL}" != "0" ]; then
+    YLABEL="dBrel"
+fi
 if [ "${DB_REF}" = "0" ]; then
     die "dB reference cannot be 0."
 fi
@@ -395,6 +406,9 @@ for ((i = 0; i < "${columns_size}"; i++)); do
     data="${DATA_COLUMNS[i]}"
     if [ "${IS_CONVERT_TO_DB}" = 1 ]; then
         data="(20 * log10( \$${data} / ${DB_REF} ))"
+    fi
+    if [ "${REL_DB_LEVEL}" != "0" ]; then
+        data="(\$${data} - (${REL_DB_LEVEL}))"
     fi
     echo -n " '${INPUT}' using 1:${data} title \"${TITLES[i]}\" linetype rgb '${colors[i]-grey20}' ${line_type}" >>"${GPI}"
 done
