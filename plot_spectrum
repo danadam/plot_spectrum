@@ -336,7 +336,7 @@ set ylabel T_YLABEL offset 8.5,0
 set lmargin 5
 
 # 1 k, 10 k, etc
-set format x "%.0s %c"
+set format x "%.1s %c"
 
 # freq scale linear
 set mxtics
