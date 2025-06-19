@@ -51,7 +51,7 @@ Required:
 Optional:
   -o | --output OUTPUT_FILE - output file (default is same as input with the
                               extension changed to "png")
-  -f | --force              - force overwrite output file
+  -F | --force-overwrite    - force overwrite output file
   --gp-commands             - don't invoke gnuplot, just print gnuplot
                               commands to stdout
 
@@ -94,7 +94,7 @@ INPUT=""
 XLABEL="Hz"
 YLABEL="dBFS"
 OUTPUT=""
-IS_FORCE=0
+IS_FORCE_OVERWRITE=0
 GP_COMMANDS=0
 TITLE=""
 XRANGE=""
@@ -141,8 +141,8 @@ while [ -n "${1-}" ]; do
             OUTPUT="${2-}"
             shift
         ;;
-        -f|--force)
-            IS_FORCE=1
+        -F|--force-overwrite)
+            IS_FORCE_OVERWRITE=1
         ;;
         --gp-commands)
             GP_COMMANDS=1
@@ -204,7 +204,7 @@ INPUT=|$INPUT|
 XLABEL=|$XLABEL|
 YLABEL=|$YLABEL|
 OUTPUT=|$OUTPUT|
-IS_FORCE=|$IS_FORCE|
+IS_FORCE_OVERWRITE=|$IS_FORCE_OVERWRITE|
 GP_COMMANDS=|$GP_COMMANDS|
 TITLE=|$TITLE|
 XRANGE=|$XRANGE|
@@ -228,8 +228,8 @@ fi
 if [ -z "${OUTPUT}" ]; then
     OUTPUT="${INPUT%.*}.png"
 fi
-if [ -f "${OUTPUT}" ] && [ "${IS_FORCE}" = "0" ]; then
-    die "File '${OUTPUT}' already exists. Use -f to overwrite."
+if [ -f "${OUTPUT}" ] && [ "${IS_FORCE_OVERWRITE}" = "0" ]; then
+    die "File '${OUTPUT}' already exists. Use -F | --force-overwrite."
 fi
 
 if [ "${GP_COMMANDS}" = 0 ] && ! which "gnuplot" >/dev/null 2>&1; then
