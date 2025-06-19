@@ -383,8 +383,10 @@ else
         -e "/# freq scale log/,/^$/ d" \
         -e "s/T_XRANGE/${effective_xrange}/"
 
-    x_max="$(echo "${effective_xrange}" | tr ":]" " " | cut -d' ' -f 2)"
-    if [ "${x_max}" -lt "10000" ]; then
+    x_min="$(echo "${effective_xrange}" | tr "[:]" " " | cut -d' ' -f 2)"
+    x_max="$(echo "${effective_xrange}" | tr "[:]" " " | cut -d' ' -f 3)"
+    log_err "range ${effective_xrange}, min ${x_min}, max ${x_max}"
+    if [ "$((x_max - x_min))" -lt "10000" ]; then
         sed -i "${GPI}" -e "/# 1 k, 10 k/,/^$/ d"
     fi
 fi
